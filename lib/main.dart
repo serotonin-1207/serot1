@@ -277,7 +277,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     if (_holidayApiKey.trim().isEmpty) {
       if (notify) {
-        _snack('먼저 [달력 API]에서 인증키를 입력하세요.');
+        _snack('먼저 [⋮ → 달력 API]에서 인증키를 입력하세요.');
       }
       return;
     }
@@ -715,7 +715,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: _panelBg,
@@ -1914,7 +1914,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         backgroundColor: const Color(0xFF007AFF),
         foregroundColor: Colors.white,
         elevation: 1,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       icon: const Icon(Icons.account_balance_wallet, size: 16),
@@ -1926,11 +1926,60 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Widget _buildMenuButton() {
+    PopupMenuItem<String> item(String value, IconData icon, String text) =>
+        PopupMenuItem<String>(
+          value: value,
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFF007AFF)),
+              const SizedBox(width: 10),
+              Text(text),
+            ],
+          ),
+        );
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_vert, color: _textSub),
+      tooltip: '더보기',
+      onSelected: (v) {
+        switch (v) {
+          case 'today':
+            _goToToday();
+            break;
+          case 'theme':
+            widget.onToggleTheme(!_isDark);
+            break;
+          case 'rate':
+            _showRateSettingsDialog();
+            break;
+          case 'api':
+            _showHolidayApiDialog();
+            break;
+          case 'board':
+            _showScheduleBoardDialog();
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        item('today', Icons.today, '오늘로 이동'),
+        item(
+          'theme',
+          _isDark ? Icons.light_mode : Icons.dark_mode,
+          _isDark ? '라이트 모드' : '다크 모드',
+        ),
+        const PopupMenuDivider(),
+        item('board', Icons.assignment, '스케줄 보드'),
+        item('api', Icons.event_available, '달력 API'),
+        item('rate', Icons.payments, '수당 단가 설정'),
+      ],
+    );
+  }
+
   Widget _buildCalendarArea() {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          padding: const EdgeInsets.fromLTRB(12, 14, 4, 8),
           child: Row(
             children: [
               Flexible(
@@ -1951,7 +2000,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: _textMain,
                             ),
@@ -1963,176 +2012,84 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              _overtimeButton(),
               const SizedBox(width: 4),
-              Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  reverse: true,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: _isDark ? '라이트 모드' : '다크 모드',
-                        icon: Icon(
-                          _isDark ? Icons.light_mode : Icons.dark_mode,
-                          size: 20,
-                          color: _textSub,
-                        ),
-                        onPressed: () => widget.onToggleTheme(!_isDark),
-                      ),
-                      TextButton(
-                        onPressed: _goToToday,
-                        child: const Text(
-                          '오늘',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _surface,
-                          foregroundColor: _textSub,
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        icon: const Icon(Icons.payments, size: 16),
-                        label: const Text(
-                          '단가',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        onPressed: _showRateSettingsDialog,
-                      ),
-                      const SizedBox(width: 5),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _surface,
-                          foregroundColor: const Color(0xFF007AFF),
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        icon: const Icon(Icons.event_available, size: 16),
-                        label: const Text(
-                          '달력 API',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        onPressed: _showHolidayApiDialog,
-                      ),
-                      const SizedBox(width: 5),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _surface,
-                          foregroundColor: const Color(0xFF007AFF),
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        icon: const Icon(Icons.assignment, size: 16),
-                        label: const Text(
-                          '보드',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        onPressed: _showScheduleBoardDialog,
-                      ),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.add_circle,
-                          size: 28,
-                          color: Color(0xFF007AFF),
-                        ),
-                        onPressed: () => _showAddEventDialog(),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.chevron_left,
-                          size: 26,
-                          color: _textSub,
-                        ),
-                        onPressed: () {
-                          _focusedDay = DateTime(
-                            _focusedDay.year,
-                            _focusedDay.month - 1,
-                          );
-                          _updateMonthData();
-                          _ensureHolidaysLoaded(_focusedDay.year);
-                        },
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.chevron_right,
-                          size: 26,
-                          color: _textSub,
-                        ),
-                        onPressed: () {
-                          _focusedDay = DateTime(
-                            _focusedDay.year,
-                            _focusedDay.month + 1,
-                          );
-                          _updateMonthData();
-                          _ensureHolidaysLoaded(_focusedDay.year);
-                        },
-                      ),
-                    ],
-                  ),
+              _overtimeButton(),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(
+                  Icons.add_circle,
+                  size: 26,
+                  color: Color(0xFF007AFF),
                 ),
+                onPressed: () => _showAddEventDialog(),
               ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.chevron_left, size: 24, color: _textSub),
+                onPressed: () {
+                  _focusedDay = DateTime(
+                    _focusedDay.year,
+                    _focusedDay.month - 1,
+                  );
+                  _updateMonthData();
+                  _ensureHolidaysLoaded(_focusedDay.year);
+                },
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.chevron_right, size: 24, color: _textSub),
+                onPressed: () {
+                  _focusedDay = DateTime(
+                    _focusedDay.year,
+                    _focusedDay.month + 1,
+                  );
+                  _updateMonthData();
+                  _ensureHolidaysLoaded(_focusedDay.year);
+                },
+              ),
+              _buildMenuButton(),
             ],
           ),
         ),
         _buildLegend(),
         Expanded(
-          child: TableCalendar(
-            locale: 'ko_KR',
-            firstDay: DateTime.utc(2020, 1, 1),
-            lastDay: DateTime.utc(2030, 12, 31),
-            focusedDay: _focusedDay,
-            headerVisible: false,
-            daysOfWeekHeight: 24,
-            rowHeight: 100,
-            shouldFillViewport: true,
-            calendarStyle: const CalendarStyle(outsideDaysVisible: true),
-            daysOfWeekStyle: DaysOfWeekStyle(
-              weekdayStyle: TextStyle(
-                color: _textSub,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+            child: TableCalendar(
+              locale: 'ko_KR',
+              firstDay: DateTime.utc(2020, 1, 1),
+              lastDay: DateTime.utc(2030, 12, 31),
+              focusedDay: _focusedDay,
+              headerVisible: false,
+              daysOfWeekHeight: 24,
+              rowHeight: 100,
+              shouldFillViewport: true,
+              calendarStyle: const CalendarStyle(outsideDaysVisible: true),
+              daysOfWeekStyle: DaysOfWeekStyle(
+                weekdayStyle: TextStyle(
+                  color: _textSub,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+                weekendStyle: TextStyle(
+                  color: _textSub,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
               ),
-              weekendStyle: TextStyle(
-                color: _textSub,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+              onPageChanged: (focusedDay) {
+                _focusedDay = focusedDay;
+                _updateMonthData();
+                _ensureHolidaysLoaded(_focusedDay.year);
+              },
+              onDaySelected: (selectedDay, focusedDay) =>
+                  _showManageEventsDialog(selectedDay),
+              calendarBuilders: CalendarBuilders(
+                defaultBuilder: (context, day, focusedDay) => _buildCell(day),
+                todayBuilder: (context, day, focusedDay) => _buildCell(day),
+                outsideBuilder: (context, day, focusedDay) =>
+                    _buildCell(day, isOutside: true),
               ),
-            ),
-            onPageChanged: (focusedDay) {
-              _focusedDay = focusedDay;
-              _updateMonthData();
-              _ensureHolidaysLoaded(_focusedDay.year);
-            },
-            onDaySelected: (selectedDay, focusedDay) =>
-                _showManageEventsDialog(selectedDay),
-            calendarBuilders: CalendarBuilders(
-              defaultBuilder: (context, day, focusedDay) => _buildCell(day),
-              todayBuilder: (context, day, focusedDay) => _buildCell(day),
-              outsideBuilder: (context, day, focusedDay) =>
-                  _buildCell(day, isOutside: true),
             ),
           ),
         ),
