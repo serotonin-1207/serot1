@@ -1,7 +1,9 @@
+import 'dart:convert'; // 데이터 변환을 위한 부품
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <--- 로컬 저장 부품 도입
 
 void main() {
   initializeDateFormatting('ko_KR', null).then((_) => runApp(const MyApp()));
@@ -21,6 +23,26 @@ class MyEvent {
     this.priority = EventPriority.normal,
     this.color = const Color(0xFFE5F9E5),
   });
+
+  // [저장용 기능] 스케줄 객체를 핸드폰에 저장할 수 있게 글자(Map)로 변환
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'isDone': isDone,
+      'priority': priority.index,
+      'color': color.value,
+    };
+  }
+
+  // [불러오기용 기능] 핸드폰에서 읽어온 글자를 다시 스케줄 객체로 복원
+  factory MyEvent.fromJson(Map<String, dynamic> json) {
+    return MyEvent(
+      title: json['title'],
+      isDone: json['isDone'] ?? false,
+      priority: EventPriority.values[json['priority'] ?? 0],
+      color: Color(json['color'] ?? const Color(0xFFE5F9E5).value),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -50,8 +72,49 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedDay = DateTime(2026, 6, 8);
   final DateTime _today = DateTime(2026, 6, 8);
 
-  final Map<DateTime, List<MyEvent>> _events = {};
+  Map<DateTime, List<MyEvent>> _events = {};
   bool _hideDoneEvents = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEvents(); // <--- 앱이 켜질 때 핸드폰 내부 저장소에서 데이터 자동 복원
+  }
+
+  // [핵심 로직] 핸드폰 하드에 저장된 장부 읽어오기
+  Future<void> _loadEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? eventsString = prefs.getString('saved_user_events');
+
+    if (eventsString != null) {
+      final Map<String, dynamic> decodedMap = jsonDecode(eventsString);
+      final Map<DateTime, List<MyEvent>> loadedEvents = {};
+
+      decodedMap.forEach((key, value) {
+        final date = DateTime.parse(key);
+        final list = (value as List)
+            .map((item) => MyEvent.fromJson(item))
+            .toList();
+        loadedEvents[date] = list;
+      });
+
+      setState(() {
+        _events = loadedEvents;
+      });
+    }
+  }
+
+  // [핵심 로직] 스케줄 변동(추가/수정/삭제)이 일어날 때마다 핸드폰 하드에 강제 인쇄(저장)
+  Future<void> _saveEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final Map<String, dynamic> tempMap = {};
+
+    _events.forEach((key, value) {
+      tempMap[key.toIso8601String()] = value.map((e) => e.toJson()).toList();
+    });
+
+    await prefs.setString('saved_user_events', jsonEncode(tempMap));
+  }
 
   String getTeam(DateTime day) {
     final baseDate = DateTime(2026, 6, 7);
@@ -64,77 +127,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Color getTeamColor(String team) {
-    if (team == '1팀') {
-      return const Color(0xFFE8F5E9);
-    }
-    if (team == '2팀') {
-      return const Color(0xFFE5F0FF);
-    }
+    if (team == '1팀') return const Color(0xFFE8F5E9);
+    if (team == '2팀') return const Color(0xFFE5F0FF);
     return const Color(0xFFFFF4E5);
   }
 
   Color getTeamTextColor(String team) {
-    if (team == '1팀') {
-      return Colors.green;
-    }
-    if (team == '2팀') {
-      return Colors.blueAccent;
-    }
+    if (team == '1팀') return Colors.green;
+    if (team == '2팀') return Colors.blueAccent;
     return Colors.orangeAccent;
   }
 
   String? getHolidayName(DateTime day) {
-    if (day.month == 1 && day.day == 1) {
-      return '신정';
-    }
-    if (day.month == 3 && day.day == 1) {
-      return '삼일절';
-    }
-    if (day.month == 5 && day.day == 5) {
-      return '어린이날';
-    }
-    if (day.month == 6 && day.day == 6) {
-      return '현충일';
-    }
-    if (day.month == 8 && day.day == 15) {
-      return '광복절';
-    }
-    if (day.month == 10 && day.day == 3) {
-      return '개천절';
-    }
-    if (day.month == 10 && day.day == 9) {
-      return '한글날';
-    }
-    if (day.month == 12 && day.day == 25) {
-      return '크리스마스';
-    }
-    if (day.year == 2026 &&
-        day.month == 2 &&
-        (day.day >= 16 && day.day <= 18)) {
+    if (day.month == 1 && day.day == 1) return '신정';
+    if (day.month == 3 && day.day == 1) return '삼일절';
+    if (day.month == 5 && day.day == 5) return '어린이날';
+    if (day.month == 6 && day.day == 6) return '현충일';
+    if (day.month == 8 && day.day == 15) return '광복절';
+    if (day.month == 10 && day.day == 3) return '개천절';
+    if (day.month == 10 && day.day == 9) return '한글날';
+    if (day.month == 12 && day.day == 25) return '크리스마스';
+    if (day.year == 2026 && day.month == 2 && (day.day >= 16 && day.day <= 18))
       return '설날 연휴';
-    }
-    if (day.year == 2026 && day.month == 5 && day.day == 24) {
-      return '부처님오신날';
-    }
-    if (day.year == 2026 &&
-        day.month == 9 &&
-        (day.day >= 24 && day.day <= 27)) {
+    if (day.year == 2026 && day.month == 5 && day.day == 24) return '부처님오신날';
+    if (day.year == 2026 && day.month == 9 && (day.day >= 24 && day.day <= 27))
       return '추석 연휴';
-    }
     return null;
   }
 
   String getPriorityStars(EventPriority priority) {
-    if (priority == EventPriority.high) {
-      return '★ ';
-    }
-    if (priority == EventPriority.critical) {
-      return '★★ ';
-    }
+    if (priority == EventPriority.high) return '★ ';
+    if (priority == EventPriority.critical) return '★★ ';
     return '';
   }
 
-  // [수정 완료] 화면 가로 깨짐(오버플로우) 현상을 해결한 대화창 UI
   void _showAddEventDialog({
     DateTime? targetDate,
     MyEvent? existingEvent,
@@ -169,7 +195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           content: SingleChildScrollView(
             child: SizedBox(
-              width: 320, // 가로 폭 고정으로 깨짐 방지
+              width: 320,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -207,7 +233,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  // [오버플로우 해결] 가로폭이 좁은 폰에서도 유연하게 줄바꿈 및 크기가 압축되도록 Wrap 위젯 및 폰트 축소 적용
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
@@ -334,6 +359,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       existingEvent.color = selectedColor;
                     }
                   });
+                  _saveEvents(); // <--- [저장 연동] 데이터가 추가/수정되면 즉시 폰 저장소 갱신
                   if (onSaved != null) {
                     onSaved();
                   }
@@ -348,7 +374,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  // [기능 추가] 실수 방지용 "삭제하시겠습니까?" 더블 체크 팝업창
   Future<bool> _showDeleteConfirmDialog() async {
     return await showDialog<bool>(
           context: context,
@@ -363,12 +388,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
             content: const Text('이 스케줄을 정말로 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.'),
             actions: [
               TextButton(
-                onPressed: () =>
-                    Navigator.pop(context, false), // 취소 누르면 false 반환
+                onPressed: () => Navigator.pop(context, false),
                 child: const Text('취소', style: TextStyle(color: Colors.grey)),
               ),
               TextButton(
-                onPressed: () => Navigator.pop(context, true), // 확인 누르면 true 반환
+                onPressed: () => Navigator.pop(context, true),
                 child: const Text(
                   '삭제',
                   style: TextStyle(
@@ -517,6 +541,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                             setState(
                                               () => event.isDone = val ?? false,
                                             );
+                                            _saveEvents(); // <--- [체크 저장] 완료 체크 상태도 영구 저장
                                             setBoardState(() {});
                                           },
                                         ),
@@ -553,7 +578,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                                 );
                                               },
                                             ),
-                                            // [수정 완료] 이중 확인 알림창을 거쳐서 안전하게 삭제하는 로직 연동
                                             IconButton(
                                               icon: const Icon(
                                                 Icons.delete,
@@ -570,6 +594,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                                       _events.remove(date);
                                                     }
                                                   });
+                                                  _saveEvents(); // <--- [삭제 저장] 삭제 내역 기기 저장소 갱신
                                                   setBoardState(() {});
                                                 }
                                               },
