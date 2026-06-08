@@ -30,7 +30,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final DateTime _referenceDate = DateTime(2026, 6, 7);
 
   String _calculateDuty(DateTime date, int teamIndex) {
-    final diff = date.difference(DateTime(_referenceDate.year, _referenceDate.month, _referenceDate.day)).inDays;
+    final diff = date
+        .difference(
+          DateTime(
+            _referenceDate.year,
+            _referenceDate.month,
+            _referenceDate.day,
+          ),
+        )
+        .inDays;
     final remainder = (diff % 3 + 3) % 3;
     return (remainder == teamIndex) ? '당' : '비';
   }
@@ -53,29 +61,59 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ButtonSegment(value: 2, label: Text('3팀')),
             ],
             selected: {_selectedTeamIndex},
-            onSelectionChanged: (newSelection) => setState(() => _selectedTeamIndex = newSelection.first),
+            onSelectionChanged: (newSelection) =>
+                setState(() => _selectedTeamIndex = newSelection.first),
           ),
           const SizedBox(height: 10),
           // 요일 헤더
-          Row(children: ['일', '월', '화', '수', '목', '금', '토'].map((e) => Expanded(child: Center(child: Text(e)))).toList()),
+          Row(
+            children: [
+              '일',
+              '월',
+              '화',
+              '수',
+              '목',
+              '금',
+              '토',
+            ].map((e) => Expanded(child: Center(child: Text(e)))).toList(),
+          ),
           // 달력 본문
           Expanded(
             child: GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, childAspectRatio: 0.7),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 0.7,
+              ),
               itemCount: lastDay.day + offset,
               itemBuilder: (context, i) {
                 if (i < offset) return const SizedBox();
                 final day = i - offset + 1;
-                final date = DateTime(_currentMonth.year, _currentMonth.month, day);
+                final date = DateTime(
+                  _currentMonth.year,
+                  _currentMonth.month,
+                  day,
+                );
                 final status = _calculateDuty(date, _selectedTeamIndex);
-                
+
                 return Container(
-                  decoration: BoxDecoration(border: Border.all(color: Colors.white12)),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white12),
+                  ),
                   child: Column(
                     children: [
-                      Text('$day', style: const TextStyle(color: Colors.white54)),
+                      Text(
+                        '$day',
+                        style: const TextStyle(color: Colors.white54),
+                      ),
                       const Spacer(),
-                      Text(status, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: status == '당' ? Colors.red : Colors.white)),
+                      Text(
+                        status,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: status == '당' ? Colors.red : Colors.white,
+                        ),
+                      ),
                       const Spacer(),
                     ],
                   ),
