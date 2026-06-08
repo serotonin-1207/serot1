@@ -126,7 +126,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Map<DateTime, List<MyEvent>> _events = {};
   bool _hideDoneEvents = false;
 
-  // 계급별 단가 (2026년 엑셀 기준)
   static const List<String> _ranks = ['소방사', '소방교', '소방장', '소방위', '소방경'];
   String _myRank = '소방위';
   final Map<String, int> _otRates = {
@@ -144,7 +143,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     '소방경': 5027,
   };
 
-  // 수당 정산용
   int _myTeam = 2;
   int _statutoryOverride = 0;
   int _dayLeave = 0;
@@ -154,7 +152,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     text: '0',
   );
 
-  // 공휴일 API
   String _holidayApiKey = '';
   final Map<int, Map<String, String>> _holidaysByYear = {};
   final Set<int> _loadingYears = {};
@@ -170,7 +167,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     "3팀": 0,
   };
 
-  // 테마 색상
   bool get _isDark => widget.isDarkMode;
   Color get _surface => _isDark ? const Color(0xFF2C2C2E) : Colors.white;
   Color get _cellBg => _isDark ? const Color(0xFF2C2C2E) : Colors.white;
@@ -418,7 +414,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final int baseWorked = dutyCount * 24 + extra;
     final int baseNight = dutyCount * 8;
 
-    // 연가 차감: 주간 시간외-1 / 야간 시간외-7·야간-8 / 당번 시간외-8·야간-8
     final int otCut = _dayLeave * 1 + _nightLeave * 7 + _dutyLeave * 8;
     final int nightCut = _nightLeave * 8 + _dutyLeave * 8;
 
@@ -441,7 +436,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _calcTotalResult = "${f.format(totalPay)} 원";
   }
 
-  void _changeLeave(String type, int delta) {
+  void _changeLeave(String type, int delta, [VoidCallback? rebuild]) {
     setState(() {
       if (type == 'day') {
         _dayLeave = (_dayLeave + delta).clamp(0, 99);
@@ -453,6 +448,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _runOvertimeCalculator();
     });
     _saveData();
+    rebuild?.call();
   }
 
   // ============================== UI 도우미 ==============================
@@ -570,7 +566,444 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return e.color;
   }
 
-  // ============================== 팝업 ==============================
+  // ============================== 초과근무 수당 시트 ==============================
+  void _showOvertimeSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.88,
+            ),
+            child: SingleChildScrollView(
+              child: _buildOvertimePanel(() => setSheet(() {})),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOvertimePanel(VoidCallback rebuild) {
+    final int dutyCount = _currentMonthStats['$_myTeam팀'] ?? 0;
+    final int statutory = _statutoryOverride > 0
+        ? _statutoryOverride
+        : (_currentMonthStats["weekdays"] ?? 0) * 8;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(top: 10, bottom: 6),
+            decoration: BoxDecoration(
+              color: _textSub.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '💰 이번 달 초과근무 수당',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: _textMain,
+                ),
+              ),
+              Text(
+                DateFormat('yyyy년 M월').format(_focusedDay),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: _textSub,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          child: Text(
+            '📊 평일: ${_currentMonthStats["weekdays"]}일  |  휴일: ${_currentMonthStats["holidays"]}일',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: _textSub,
+            ),
+          ),
+        ),
+        _buildTeamStatRow('1팀', _currentMonthStats["1팀"] ?? 0),
+        _buildTeamStatRow('2팀', _currentMonthStats["2팀"] ?? 0),
+        _buildTeamStatRow('3팀', _currentMonthStats["3팀"] ?? 0),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Divider(height: 24),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '내 팀 선택',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: _textSub,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        _buildTeamSelector(rebuild),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+          child: Text(
+            '이번 달 당번 $dutyCount일 · 법정 $statutory시간',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF007AFF),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '계급 선택',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: _textSub,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        _buildRankSelector(rebuild),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '🏖️ 연가 사용 (버튼으로 횟수 입력)',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: _textSub,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        _buildLeaveCounter('주간연가', '🌞', _dayLeave, 'day', rebuild),
+        _buildLeaveCounter('야간연가', '🌙', _nightLeave, 'night', rebuild),
+        _buildLeaveCounter('당번연가', '📅', _dutyLeave, 'duty', rebuild),
+        _buildCalcInput('추가 근무(보강·교육) 시간', _extraController, rebuild),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _panelBg,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '예상 수당 상세 명세 ($_myRank)',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: _textSub,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '• 시간외 수당:',
+                style: TextStyle(fontSize: 11, color: _textSub),
+              ),
+              Text(
+                '  $_calcOtResult',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: _textMain,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text('• 야간 수당:', style: TextStyle(fontSize: 11, color: _textSub)),
+              Text(
+                '  $_calcNightResult',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: _textMain,
+                ),
+              ),
+              const Divider(),
+              const Text(
+                '이번 달 총 수당 합계',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.redAccent,
+                ),
+              ),
+              Text(
+                _calcTotalResult,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTeamSelector([VoidCallback? rebuild]) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [1, 2, 3].map((t) {
+          final sel = _myTeam == t;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _myTeam = t;
+                  _runOvertimeCalculator();
+                });
+                _saveData();
+                rebuild?.call();
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: sel ? getTeamColor('$t팀') : Colors.transparent,
+                  border: Border.all(
+                    color: sel ? getTeamTextColor('$t팀') : _border,
+                    width: sel ? 1.5 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: Text(
+                    '$t팀',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: sel ? getTeamTextColor('$t팀') : _textSub,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildRankSelector([VoidCallback? rebuild]) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: _ranks.map((r) {
+          final sel = _myRank == r;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _myRank = r;
+                  _runOvertimeCalculator();
+                });
+                _saveData();
+                rebuild?.call();
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: sel ? const Color(0xFF007AFF) : Colors.transparent,
+                  border: Border.all(
+                    color: sel ? const Color(0xFF007AFF) : _border,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: Text(
+                    r,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: sel ? Colors.white : _textSub,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildLeaveCounter(
+    String label,
+    String emoji,
+    int value,
+    String type, [
+    VoidCallback? rebuild,
+  ]) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$emoji $label',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+                color: _textMain,
+              ),
+            ),
+          ),
+          _roundBtn(Icons.remove, () => _changeLeave(type, -1, rebuild)),
+          Container(
+            width: 52,
+            alignment: Alignment.center,
+            child: Text(
+              '$value회',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: value > 0 ? const Color(0xFF007AFF) : _textSub,
+              ),
+            ),
+          ),
+          _roundBtn(Icons.add, () => _changeLeave(type, 1, rebuild)),
+        ],
+      ),
+    );
+  }
+
+  Widget _roundBtn(IconData icon, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: const Color(
+            0xFF007AFF,
+          ).withValues(alpha: _isDark ? 0.28 : 0.12),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 20, color: const Color(0xFF007AFF)),
+      ),
+    );
+  }
+
+  Widget _buildTeamStatRow(String teamName, int days) {
+    String teamKey = teamName.startsWith('2') ? '2팀' : teamName;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: getTeamColor(teamKey),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            teamName,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: getTeamTextColor(teamKey),
+            ),
+          ),
+          Text(
+            '$days일 근무',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: _textMain,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalcInput(
+    String label,
+    TextEditingController controller, [
+    VoidCallback? rebuild,
+  ]) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: _textSub,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 40,
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: TextStyle(fontSize: 14, color: _textMain),
+              onChanged: (val) {
+                setState(() => _runOvertimeCalculator());
+                _saveData();
+                rebuild?.call();
+              },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================== 설정/팝업 ==============================
   void _showRateSettingsDialog() {
     final otCtrls = {
       for (final r in _ranks)
@@ -1472,353 +1905,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
   // ============================== 빌드 ==============================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Row(children: [_buildSidebar(), _buildCalendarArea()]),
-      ),
-    );
+    return Scaffold(body: SafeArea(child: _buildCalendarArea()));
   }
 
-  Widget _buildSidebar() {
-    final int dutyCount = _currentMonthStats['$_myTeam팀'] ?? 0;
-    final int statutory = _statutoryOverride > 0
-        ? _statutoryOverride
-        : (_currentMonthStats["weekdays"] ?? 0) * 8;
-
-    return Container(
-      width: 250,
-      decoration: BoxDecoration(
-        color: _surface,
-        border: Border(right: BorderSide(color: _border)),
+  Widget _overtimeButton() {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF007AFF),
+        foregroundColor: Colors.white,
+        elevation: 1,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 16, top: 18, bottom: 5),
-              child: Text(
-                '📊 이번 달 근무 통계',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: _textMain,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              child: Text(
-                '평일: ${_currentMonthStats["weekdays"]}일  |  휴일: ${_currentMonthStats["holidays"]}일',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: _textSub,
-                ),
-              ),
-            ),
-            _buildTeamStatRow('1팀', _currentMonthStats["1팀"] ?? 0),
-            _buildTeamStatRow('2팀', _currentMonthStats["2팀"] ?? 0),
-            _buildTeamStatRow('3팀', _currentMonthStats["3팀"] ?? 0),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Divider(height: 24),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                '💰 초과근무 수당 정산',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: _textMain,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                '내 팀 선택',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: _textSub,
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            _buildTeamSelector(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 2),
-              child: Text(
-                '이번 달 당번 $dutyCount일 · 법정 $statutory시간',
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF007AFF),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                '계급 선택',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: _textSub,
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            _buildRankSelector(),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                '🏖️ 연가 사용 (버튼으로 횟수 입력)',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: _textSub,
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            _buildLeaveCounter('주간연가', '🌞', _dayLeave, 'day'),
-            _buildLeaveCounter('야간연가', '🌙', _nightLeave, 'night'),
-            _buildLeaveCounter('당번연가', '📅', _dutyLeave, 'duty'),
-            _buildCalcInput('추가 근무(보강·교육) 시간', _extraController),
-            const SizedBox(height: 8),
-
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _panelBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '예상 수당 상세 명세 ($_myRank)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: _textSub,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '• 시간외 수당:',
-                    style: TextStyle(fontSize: 11, color: _textSub),
-                  ),
-                  Text(
-                    '  $_calcOtResult',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: _textMain,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '• 야간 수당:',
-                    style: TextStyle(fontSize: 11, color: _textSub),
-                  ),
-                  Text(
-                    '  $_calcNightResult',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: _textMain,
-                    ),
-                  ),
-                  const Divider(),
-                  const Text(
-                    '이번 달 총 수당 합계',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.redAccent,
-                    ),
-                  ),
-                  Text(
-                    _calcTotalResult,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+      icon: const Icon(Icons.account_balance_wallet, size: 16),
+      label: const Text(
+        '수당 보기',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
       ),
-    );
-  }
-
-  Widget _buildTeamSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [1, 2, 3].map((t) {
-          final sel = _myTeam == t;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _myTeam = t;
-                  _runOvertimeCalculator();
-                });
-                _saveData();
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                decoration: BoxDecoration(
-                  color: sel ? getTeamColor('$t팀') : Colors.transparent,
-                  border: Border.all(
-                    color: sel ? getTeamTextColor('$t팀') : _border,
-                    width: sel ? 1.5 : 1,
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Center(
-                  child: Text(
-                    '$t팀',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: sel ? getTeamTextColor('$t팀') : _textSub,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildRankSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Row(
-        children: _ranks.map((r) {
-          final sel = _myRank == r;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _myRank = r;
-                  _runOvertimeCalculator();
-                });
-                _saveData();
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: sel ? const Color(0xFF007AFF) : Colors.transparent,
-                  border: Border.all(
-                    color: sel ? const Color(0xFF007AFF) : _border,
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Center(
-                  child: Text(
-                    r,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: sel ? Colors.white : _textSub,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildLeaveCounter(
-    String label,
-    String emoji,
-    int value,
-    String type,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '$emoji $label',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.bold,
-                color: _textMain,
-              ),
-            ),
-          ),
-          _roundBtn(Icons.remove, () => _changeLeave(type, -1)),
-          Container(
-            width: 46,
-            alignment: Alignment.center,
-            child: Text(
-              '$value회',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: value > 0 ? const Color(0xFF007AFF) : _textSub,
-              ),
-            ),
-          ),
-          _roundBtn(Icons.add, () => _changeLeave(type, 1)),
-        ],
-      ),
-    );
-  }
-
-  Widget _roundBtn(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: const Color(
-            0xFF007AFF,
-          ).withValues(alpha: _isDark ? 0.28 : 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 18, color: const Color(0xFF007AFF)),
-      ),
+      onPressed: _showOvertimeSheet,
     );
   }
 
   Widget _buildCalendarArea() {
-    return Expanded(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                InkWell(
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Row(
+            children: [
+              Flexible(
+                child: InkWell(
                   borderRadius: BorderRadius.circular(8),
                   onTap: _showMonthPicker,
                   child: Padding(
@@ -1829,12 +1945,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          DateFormat('yyyy년 M월').format(_focusedDay),
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: _textMain,
+                        Flexible(
+                          child: Text(
+                            DateFormat('yyyy년 M월').format(_focusedDay),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: _textMain,
+                            ),
                           ),
                         ),
                         Icon(Icons.arrow_drop_down, color: _textSub),
@@ -1842,178 +1962,181 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                   ),
                 ),
-                Flexible(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    reverse: true,
-                    child: Row(
-                      children: [
-                        IconButton(
-                          tooltip: _isDark ? '라이트 모드' : '다크 모드',
-                          icon: Icon(
-                            _isDark ? Icons.light_mode : Icons.dark_mode,
-                            size: 20,
-                            color: _textSub,
-                          ),
-                          onPressed: () => widget.onToggleTheme(!_isDark),
+              ),
+              const SizedBox(width: 6),
+              _overtimeButton(),
+              const SizedBox(width: 4),
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: _isDark ? '라이트 모드' : '다크 모드',
+                        icon: Icon(
+                          _isDark ? Icons.light_mode : Icons.dark_mode,
+                          size: 20,
+                          color: _textSub,
                         ),
-                        TextButton(
-                          onPressed: _goToToday,
-                          child: const Text(
-                            '오늘',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        onPressed: () => widget.onToggleTheme(!_isDark),
+                      ),
+                      TextButton(
+                        onPressed: _goToToday,
+                        child: const Text(
+                          '오늘',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(width: 2),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _surface,
-                            foregroundColor: _textSub,
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                      ),
+                      const SizedBox(width: 2),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _surface,
+                          foregroundColor: _textSub,
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          icon: const Icon(Icons.payments, size: 16),
-                          label: const Text(
-                            '수당 단가 설정',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          onPressed: _showRateSettingsDialog,
                         ),
-                        const SizedBox(width: 5),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _surface,
-                            foregroundColor: const Color(0xFF007AFF),
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                        icon: const Icon(Icons.payments, size: 16),
+                        label: const Text(
+                          '단가',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
-                          icon: const Icon(Icons.event_available, size: 16),
-                          label: const Text(
-                            '달력 API',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          onPressed: _showHolidayApiDialog,
                         ),
-                        const SizedBox(width: 5),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _surface,
-                            foregroundColor: const Color(0xFF007AFF),
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                        onPressed: _showRateSettingsDialog,
+                      ),
+                      const SizedBox(width: 5),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _surface,
+                          foregroundColor: const Color(0xFF007AFF),
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          icon: const Icon(Icons.assignment, size: 16),
-                          label: const Text(
-                            '스케줄 보드',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          onPressed: _showScheduleBoardDialog,
                         ),
-                        const SizedBox(width: 4),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.add_circle,
-                            size: 30,
-                            color: Color(0xFF007AFF),
+                        icon: const Icon(Icons.event_available, size: 16),
+                        label: const Text(
+                          '달력 API',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
-                          onPressed: () => _showAddEventDialog(),
                         ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.chevron_left,
-                            size: 26,
-                            color: _textSub,
+                        onPressed: _showHolidayApiDialog,
+                      ),
+                      const SizedBox(width: 5),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _surface,
+                          foregroundColor: const Color(0xFF007AFF),
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          onPressed: () {
-                            _focusedDay = DateTime(
-                              _focusedDay.year,
-                              _focusedDay.month - 1,
-                            );
-                            _updateMonthData();
-                            _ensureHolidaysLoaded(_focusedDay.year);
-                          },
                         ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.chevron_right,
-                            size: 26,
-                            color: _textSub,
+                        icon: const Icon(Icons.assignment, size: 16),
+                        label: const Text(
+                          '보드',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
-                          onPressed: () {
-                            _focusedDay = DateTime(
-                              _focusedDay.year,
-                              _focusedDay.month + 1,
-                            );
-                            _updateMonthData();
-                            _ensureHolidaysLoaded(_focusedDay.year);
-                          },
                         ),
-                      ],
-                    ),
+                        onPressed: _showScheduleBoardDialog,
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.add_circle,
+                          size: 28,
+                          color: Color(0xFF007AFF),
+                        ),
+                        onPressed: () => _showAddEventDialog(),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.chevron_left,
+                          size: 26,
+                          color: _textSub,
+                        ),
+                        onPressed: () {
+                          _focusedDay = DateTime(
+                            _focusedDay.year,
+                            _focusedDay.month - 1,
+                          );
+                          _updateMonthData();
+                          _ensureHolidaysLoaded(_focusedDay.year);
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.chevron_right,
+                          size: 26,
+                          color: _textSub,
+                        ),
+                        onPressed: () {
+                          _focusedDay = DateTime(
+                            _focusedDay.year,
+                            _focusedDay.month + 1,
+                          );
+                          _updateMonthData();
+                          _ensureHolidaysLoaded(_focusedDay.year);
+                        },
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          _buildLegend(),
-          Expanded(
-            child: TableCalendar(
-              locale: 'ko_KR',
-              firstDay: DateTime.utc(2020, 1, 1),
-              lastDay: DateTime.utc(2030, 12, 31),
-              focusedDay: _focusedDay,
-              headerVisible: false,
-              daysOfWeekHeight: 30,
-              rowHeight: 105,
-              shouldFillViewport: true,
-              calendarStyle: const CalendarStyle(outsideDaysVisible: true),
-              daysOfWeekStyle: DaysOfWeekStyle(
-                weekdayStyle: TextStyle(
-                  color: _textSub,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-                weekendStyle: TextStyle(
-                  color: _textSub,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
               ),
-              onPageChanged: (focusedDay) {
-                _focusedDay = focusedDay;
-                _updateMonthData();
-                _ensureHolidaysLoaded(_focusedDay.year);
-              },
-              onDaySelected: (selectedDay, focusedDay) =>
-                  _showManageEventsDialog(selectedDay),
-              calendarBuilders: CalendarBuilders(
-                defaultBuilder: (context, day, focusedDay) => _buildCell(day),
-                todayBuilder: (context, day, focusedDay) => _buildCell(day),
-                outsideBuilder: (context, day, focusedDay) =>
-                    _buildCell(day, isOutside: true),
+            ],
+          ),
+        ),
+        _buildLegend(),
+        Expanded(
+          child: TableCalendar(
+            locale: 'ko_KR',
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2030, 12, 31),
+            focusedDay: _focusedDay,
+            headerVisible: false,
+            daysOfWeekHeight: 24,
+            rowHeight: 100,
+            shouldFillViewport: true,
+            calendarStyle: const CalendarStyle(outsideDaysVisible: true),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(
+                color: _textSub,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              weekendStyle: TextStyle(
+                color: _textSub,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
               ),
             ),
+            onPageChanged: (focusedDay) {
+              _focusedDay = focusedDay;
+              _updateMonthData();
+              _ensureHolidaysLoaded(_focusedDay.year);
+            },
+            onDaySelected: (selectedDay, focusedDay) =>
+                _showManageEventsDialog(selectedDay),
+            calendarBuilders: CalendarBuilders(
+              defaultBuilder: (context, day, focusedDay) => _buildCell(day),
+              todayBuilder: (context, day, focusedDay) => _buildCell(day),
+              outsideBuilder: (context, day, focusedDay) =>
+                  _buildCell(day, isOutside: true),
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -2054,78 +2177,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           chip(getTeamColor('3팀'), '3팀'),
           chip(Colors.red, '공휴일'),
           chip(Colors.transparent, '오늘', ring: true),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTeamStatRow(String teamName, int days) {
-    String teamKey = teamName.startsWith('2') ? '2팀' : teamName;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: getTeamColor(teamKey),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            teamName,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: getTeamTextColor(teamKey),
-            ),
-          ),
-          Text(
-            '$days일 근무',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: _textMain,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCalcInput(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: _textSub,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 3),
-          SizedBox(
-            height: 35,
-            child: TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              style: TextStyle(fontSize: 13, color: _textMain),
-              onChanged: (val) {
-                setState(() => _runOvertimeCalculator());
-                _saveData();
-              },
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
